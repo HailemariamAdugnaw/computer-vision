@@ -1,8 +1,10 @@
-/* ─── app.js – Flower Classifier UI ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Flower Classifier – app.js
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 "use strict";
 
-// ── Flower emoji map ────────────────────────────────────────────────────────
+// ── Flower emoji map ─────────────────────────────────────────────────────────
 const FLOWER_EMOJI = {
   daisy:     "🌼",
   dandelion: "🍀",
@@ -18,25 +20,46 @@ function flowerEmoji(label) {
   return FLOWER_EMOJI[key] || "🌸";
 }
 
-// ── Tab switching ────────────────────────────────────────────────────────────
-function switchTab(tab) {
-  document.getElementById("tab-upload").classList.toggle("active",  tab === "upload");
-  document.getElementById("tab-camera").classList.toggle("active",  tab === "camera");
-  document.getElementById("panel-upload").classList.toggle("hidden", tab !== "upload");
-  document.getElementById("panel-camera").classList.toggle("hidden", tab !== "camera");
+// ── Dark / Light theme ────────────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem("theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(saved);
+})();
 
-  if (tab !== "camera") stopCamera();
-  resetResult();
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const icon = document.getElementById("themeIcon");
+  if (icon) icon.textContent = theme === "dark" ? "☀️" : "🌙";
+  localStorage.setItem("theme", theme);
 }
 
-// ── Upload panel ─────────────────────────────────────────────────────────────
+document.getElementById("themeToggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  applyTheme(current === "dark" ? "light" : "dark");
+});
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  const isUpload = tab === "upload";
+  document.getElementById("tab-upload").classList.toggle("active", isUpload);
+  document.getElementById("tab-camera").classList.toggle("active", !isUpload);
+  document.getElementById("tab-upload").setAttribute("aria-selected", isUpload);
+  document.getElementById("tab-camera").setAttribute("aria-selected", !isUpload);
+  document.getElementById("panel-upload").classList.toggle("hidden", !isUpload);
+  document.getElementById("panel-camera").classList.toggle("hidden", isUpload);
+  if (isUpload) stopCamera();
+  hideResult();
+}
+
+// ── Upload panel ──────────────────────────────────────────────────────────────
 let uploadFile = null;
 
 function handleDragOver(e) {
   e.preventDefault();
   document.getElementById("dropZone").classList.add("drag-over");
 }
-function handleDragLeave(e) {
+function handleDragLeave() {
   document.getElementById("dropZone").classList.remove("drag-over");
 }
 function handleDrop(e) {
@@ -52,18 +75,17 @@ function handleFileSelect(e) {
 
 function loadUploadFile(file) {
   if (!file.type.startsWith("image/")) {
-    showError("Please select a valid image file.");
+    showError("Please select a valid image file (JPG, PNG, BMP, WEBP).");
     return;
   }
   uploadFile = file;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const prev = document.getElementById("uploadPreview");
-    prev.src = ev.target.result;
+    document.getElementById("uploadPreview").src = ev.target.result;
     document.getElementById("uploadPreviewWrap").hidden = false;
     document.getElementById("dropZone").style.display = "none";
     document.getElementById("classifyUploadBtn").disabled = false;
-    resetResult();
+    hideResult();
   };
   reader.readAsDataURL(file);
 }
@@ -74,7 +96,7 @@ function clearUpload() {
   document.getElementById("uploadPreviewWrap").hidden = true;
   document.getElementById("dropZone").style.display = "";
   document.getElementById("classifyUploadBtn").disabled = true;
-  resetResult();
+  hideResult();
 }
 
 async function classifyUpload() {
@@ -84,49 +106,46 @@ async function classifyUpload() {
   await runPrediction("/predict", fd);
 }
 
-// ── Camera panel ─────────────────────────────────────────────────────────────
-let stream     = null;
+// ── Camera panel ──────────────────────────────────────────────────────────────
+let stream       = null;
 let capturedBlob = null;
 
 async function startCamera() {
   const errorEl = document.getElementById("cameraError");
-  errorEl.classList.add("hidden");
+  errorEl.hidden = true;
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
-  } catch (err) {
-    // Try without facingMode constraint (desktop fallback)
+  } catch (_) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     } catch (err2) {
       errorEl.textContent = "Camera access denied or not available: " + err2.message;
-      errorEl.classList.remove("hidden");
+      errorEl.hidden = false;
       return;
     }
   }
 
   const video = document.getElementById("cameraFeed");
   video.srcObject = stream;
-  video.style.display = "block";
-
+  video.classList.add("active");
+  document.getElementById("cameraPlaceholder").style.display = "none";
+  document.getElementById("viewfinder").hidden = false;
   document.getElementById("startCameraBtn").hidden = true;
   document.getElementById("captureBtn").disabled = false;
-
-  resetResult();
+  hideResult();
 }
 
 function stopCamera() {
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-  }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   const video = document.getElementById("cameraFeed");
   video.srcObject = null;
-
-  // Reset camera UI to initial state
+  video.classList.remove("active");
+  document.getElementById("cameraPlaceholder").style.display = "";
+  document.getElementById("viewfinder").hidden = true;
   document.getElementById("startCameraBtn").hidden = false;
   document.getElementById("captureBtn").disabled = true;
   document.getElementById("retakeBtn").hidden = true;
@@ -134,48 +153,42 @@ function stopCamera() {
 
   const img = document.getElementById("capturedImg");
   img.src = "";
-  img.classList.add("hidden");
+  img.classList.remove("visible");
   capturedBlob = null;
 }
 
 function capturePhoto() {
   const video  = document.getElementById("cameraFeed");
   const canvas = document.getElementById("cameraCanvas");
-
   canvas.width  = video.videoWidth  || 640;
   canvas.height = video.videoHeight || 480;
   canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
 
   canvas.toBlob((blob) => {
     capturedBlob = blob;
-
     const img = document.getElementById("capturedImg");
     img.src = URL.createObjectURL(blob);
-    img.classList.remove("hidden");
-
-    // Pause the stream (keep it alive for retake)
-    video.style.display = "none";
-
-    document.getElementById("captureBtn").disabled  = true;
-    document.getElementById("retakeBtn").hidden     = false;
+    img.classList.add("visible");
+    video.classList.remove("active");
+    document.getElementById("viewfinder").hidden = true;
+    document.getElementById("captureBtn").disabled = true;
+    document.getElementById("retakeBtn").hidden = false;
     document.getElementById("classifyCameraBtn").hidden = false;
-    resetResult();
+    hideResult();
   }, "image/jpeg", 0.92);
 }
 
 function retakePhoto() {
   capturedBlob = null;
-  const img   = document.getElementById("capturedImg");
+  const img = document.getElementById("capturedImg");
   img.src = "";
-  img.classList.add("hidden");
-
-  const video = document.getElementById("cameraFeed");
-  video.style.display = "block";
-
-  document.getElementById("captureBtn").disabled  = false;
-  document.getElementById("retakeBtn").hidden     = true;
+  img.classList.remove("visible");
+  document.getElementById("cameraFeed").classList.add("active");
+  document.getElementById("viewfinder").hidden = false;
+  document.getElementById("captureBtn").disabled = false;
+  document.getElementById("retakeBtn").hidden = true;
   document.getElementById("classifyCameraBtn").hidden = true;
-  resetResult();
+  hideResult();
 }
 
 async function classifyCamera() {
@@ -185,92 +198,115 @@ async function classifyCamera() {
   await runPrediction("/predict_camera", fd);
 }
 
-// ── API & Result rendering ────────────────────────────────────────────────────
+// ── Prediction flow ───────────────────────────────────────────────────────────
+
+/**
+ * UI state machine:
+ *   idle → loading → (success | error)
+ *
+ * showSpinner only controls the spinner; it does NOT touch resultCard/errorCard.
+ * renderResult and showError each fully own their respective state visibility.
+ */
+
 async function runPrediction(endpoint, formData) {
-  showSpinner(true);
-  document.getElementById("resultPanel").classList.remove("hidden");
+  // Show result panel in loading state
+  const panel = document.getElementById("resultPanel");
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  document.getElementById("loadingState").hidden = false;
+  document.getElementById("resultCard").hidden   = true;
+  document.getElementById("errorCard").hidden    = true;
 
   try {
     const resp = await fetch(endpoint, { method: "POST", body: formData });
     const data = await resp.json();
+    document.getElementById("loadingState").hidden = true;
 
     if (data.error) {
       showError(data.error);
-      return;
+    } else {
+      renderResult(data);
     }
-    renderResult(data);
   } catch (err) {
-    showError("Network error: " + err.message);
-  } finally {
-    showSpinner(false);
+    document.getElementById("loadingState").hidden = true;
+    showError("Network error — please check your connection and try again.");
+    console.error(err);
   }
 }
 
 function renderResult(data) {
-  // Top prediction
-  document.getElementById("resultLabel").textContent = data.top_label;
-  document.getElementById("resultEmoji").textContent = flowerEmoji(data.top_label);
-  document.getElementById("confidenceText").textContent =
-      `Confidence: ${data.top_confidence.toFixed(1)}%`;
+  // ── Winner banner ──
+  document.getElementById("resultEmoji").textContent  = flowerEmoji(data.top_label);
+  document.getElementById("resultLabel").textContent  = data.top_label;
+  document.getElementById("confidencePct").textContent = data.top_confidence.toFixed(1) + "%";
 
+  const progress = document.getElementById("confidenceProgress");
+  progress.setAttribute("aria-valuenow", Math.round(data.top_confidence));
+  progress.setAttribute("aria-label", `${data.top_label} — ${data.top_confidence.toFixed(1)}% confidence`);
+
+  // Show card BEFORE animating so transitions fire
   document.getElementById("resultCard").hidden = false;
   document.getElementById("errorCard").hidden  = true;
 
-  // Animate confidence bar (defer for CSS transition)
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      document.getElementById("confidenceBar").style.width = data.top_confidence + "%";
-    });
-  });
+  // Animate confidence bar after a microtask
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById("confidenceBar").style.width = data.top_confidence + "%";
+  }));
 
-  // Top-5 list
+  // ── Predictions list ──
   const ul = document.getElementById("top5List");
   ul.innerHTML = "";
-  data.predictions.forEach((p) => {
+  data.predictions.forEach((p, idx) => {
     const li = document.createElement("li");
-    li.className = "top5-item";
+    li.className = "pred-item";
     li.innerHTML = `
-      <span class="top5-name">${p.label}</span>
-      <div class="top5-bar-wrap">
-        <div class="top5-bar" data-pct="${p.confidence}"></div>
-      </div>
-      <span class="top5-pct">${p.confidence.toFixed(1)}%</span>
-    `;
+      <span class="pred-name">
+        <span class="pred-rank" aria-hidden="true">${idx + 1}</span>
+        ${escapeHtml(p.label)}
+      </span>
+      <span class="pred-pct">${p.confidence.toFixed(1)}%</span>
+      <div class="pred-bar-wrap" role="progressbar"
+           aria-valuenow="${Math.round(p.confidence)}"
+           aria-valuemin="0" aria-valuemax="100"
+           aria-label="${escapeHtml(p.label)} ${p.confidence.toFixed(1)}%">
+        <div class="pred-bar" data-pct="${p.confidence}"></div>
+      </div>`;
     ul.appendChild(li);
   });
 
-  // Animate top-5 bars
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      ul.querySelectorAll(".top5-bar").forEach(bar => {
-        bar.style.width = bar.dataset.pct + "%";
-      });
+  // Animate bars
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ul.querySelectorAll(".pred-bar").forEach(bar => {
+      bar.style.width = bar.dataset.pct + "%";
     });
-  });
+  }));
 }
 
 function showError(msg) {
-  document.getElementById("resultPanel").classList.remove("hidden");
-  document.getElementById("resultCard").hidden = true;
-  document.getElementById("errorCard").hidden  = false;
+  document.getElementById("resultPanel").hidden = false;
+  document.getElementById("loadingState").hidden = true;
+  document.getElementById("resultCard").hidden   = true;
+  document.getElementById("errorCard").hidden    = false;
   document.getElementById("errorMsg").textContent = msg;
 }
 
-function showSpinner(show) {
-  document.getElementById("spinner").hidden    = !show;
-  document.getElementById("resultCard").hidden  = true;
-  document.getElementById("errorCard").hidden   = true;
-}
-
-function resetResult() {
-  document.getElementById("resultPanel").classList.add("hidden");
-  document.getElementById("resultCard").hidden = true;
-  document.getElementById("errorCard").hidden  = true;
-  document.getElementById("spinner").hidden    = true;
+function hideResult() {
+  document.getElementById("resultPanel").hidden  = true;
+  document.getElementById("loadingState").hidden = true;
+  document.getElementById("resultCard").hidden   = true;
+  document.getElementById("errorCard").hidden    = true;
   document.getElementById("confidenceBar").style.width = "0%";
 }
 
 function resetAll() {
   clearUpload();
-  resetResult();
+  hideResult();
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
 }
