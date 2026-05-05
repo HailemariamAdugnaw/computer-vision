@@ -1,0 +1,2 @@
+# This directory stores the trained model (flower_model.keras) and class_names.txt.
+# Run `python train.py` to generate them.
