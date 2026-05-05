@@ -5,8 +5,8 @@
 // ── Flower emoji map ────────────────────────────────────────────────────────
 const FLOWER_EMOJI = {
   daisy:     "🌼",
-  dandelion: "🌻",
-  lily:      "🌷",
+  dandelion: "🍀",
+  lily:      "🌸",
   orchid:    "🌺",
   rose:      "🌹",
   sunflower: "🌻",
